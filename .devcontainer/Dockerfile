@@ -45,6 +45,56 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# ---- OpenMontage 動画制作ツールチェーン ----
+
+# FFmpeg と日本語フォント
+# FFmpeg は約15ツール（合成・結合・字幕焼き込み・音声ミックス）が依存する必須コンポーネント。
+# fonts-noto-cjk は字幕/キャプションに日本語を焼き込む際の豆腐化を防ぐ。
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    fontconfig \
+    fonts-noto-cjk \
+    fonts-dejavu-core \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python ツールチェーン（OpenMontage は Python 3.10+ が必須）
+# ubuntu:22.04 の python3 は 3.10 だが pip / venv / ensurepip が同梱されないため
+# 明示的に導入する（これが無いと `make setup` の venv 作成が失敗する）。
+# python-is-python3 は AGENT_GUIDE.md の手順が `python -c ...` を前提にしているため。
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    python-is-python3 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Chromium ヘッドレス実行用の共有ライブラリ
+# Remotion / HyperFrames は Chrome Headless Shell でフレームを描画する。
+# シェル本体は初回レンダリング時に自動ダウンロードされるが、これらの .so が無いと
+# "libnspr4.so: cannot open shared object file" で起動に失敗する。
+RUN apt-get update && apt-get install -y \
+    libnspr4 \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libatspi2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libxshmfence1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # JUSTタスクランナーのインストール
 RUN JUST_VERSION=$(curl -s https://api.github.com/repos/casey/just/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') \
     && ARCH=$(uname -m) \
@@ -88,6 +138,25 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g @google/gemini-cli
 
+# HyperFrames / Remotion 用の Chromium（Playwright ビルドを流用）
+# HyperFrames は Linux ARM64 向けの Chrome Headless Shell を配布していないため
+# （`npx hyperframes browser ensure` が「手動で用意せよ」と言って失敗する）、
+# Playwright の正規 Chromium ビルドを固定パスへ入れて参照させる。
+# Ubuntu 22.04 の chromium-browser は snap 移行用スタブ(v85)でコンテナでは動かないので使わない。
+# アーキテクチャ差を吸収するためバイナリは glob で探して symlink する。
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN mkdir -p /opt/playwright \
+    && npx -y playwright@latest install chromium \
+    && CHROME_BIN="$(find /opt/playwright -maxdepth 3 -type f -name chrome | head -n 1)" \
+    && HEADLESS_BIN="$(find /opt/playwright -maxdepth 3 -type f -name chrome-headless-shell | head -n 1)" \
+    && ln -sf "$CHROME_BIN" /usr/local/bin/chromium \
+    && ln -sf "$HEADLESS_BIN" /usr/local/bin/chrome-headless-shell \
+    && /usr/local/bin/chromium --version \
+    && npm cache clean --force
+
+# HyperFrames にこの Chromium を使わせる
+ENV HYPERFRAMES_BROWSER_PATH=/usr/local/bin/chrome-headless-shell
+
 # GitHub CLIのインストール（公式aptリポジトリ / amd64・arm64両対応）
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -116,7 +185,11 @@ RUN echo 'export ZSH="$HOME/.oh-my-zsh"' >> ~/.zshrc \
     && echo 'plugins=(git)' >> ~/.zshrc \
     && echo 'source $ZSH/oh-my-zsh.sh' >> ~/.zshrc \
     && echo 'source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh' >> ~/.zshrc \
-    && echo 'source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh' >> ~/.zshrc
+    && echo 'source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh' >> ~/.zshrc \
+    && echo '' >> ~/.zshrc \
+    && echo '# OpenMontage: プロジェクトの venv があれば自動で有効化する' >> ~/.zshrc \
+    && echo '# （piper_tts など PATH 上のバイナリを見るツールが shutil.which で検出できるようにするため）' >> ~/.zshrc \
+    && echo '[ -f /workspaces/OpenMontage/.venv/bin/activate ] && source /workspaces/OpenMontage/.venv/bin/activate' >> ~/.zshrc
 
 # 作業ディレクトリ設定
 WORKDIR /workspaces
