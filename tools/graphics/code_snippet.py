@@ -212,10 +212,25 @@ class CodeSnippet(BaseTool):
                 fill=color,
             )
 
-        # Draw title text
-        try:
-            font = ImageFont.truetype("arial.ttf", font_size - 4)
-        except (IOError, OSError):
+        # Draw title text.
+        # "arial.ttf" only resolves on Windows, and the bitmap fallback has no
+        # CJK glyphs — a Japanese/Chinese/Korean title renders as tofu boxes.
+        # Try a CJK-capable font first, then common Latin faces.
+        font = None
+        for candidate in (
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "C:/Windows/Fonts/msgothic.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "arial.ttf",
+        ):
+            try:
+                font = ImageFont.truetype(candidate, font_size - 4)
+                break
+            except (IOError, OSError):
+                continue
+        if font is None:
             font = ImageFont.load_default()
 
         bbox = draw.textbbox((0, 0), title, font=font)
