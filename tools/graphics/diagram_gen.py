@@ -8,6 +8,7 @@ diagrams via Pillow as fallback.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -153,20 +154,36 @@ class DiagramGen(BaseTool):
             config_path = output_path.with_suffix(".mermaid.json")
             config_path.write_text(json.dumps(mermaid_config), encoding="utf-8")
 
+            # mmdc drives Chrome through puppeteer. Inside a container the
+            # Chrome sandbox cannot start ("No usable sandbox!"), so the render
+            # dies unless we hand puppeteer --no-sandbox. PUPPETEER_EXECUTABLE_PATH
+            # also lets us reuse an already-installed browser instead of the one
+            # puppeteer downloads for itself.
+            puppeteer_config: dict[str, Any] = {
+                "args": ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
+            }
+            browser = os.environ.get("PUPPETEER_EXECUTABLE_PATH") or shutil.which("chromium")
+            if browser:
+                puppeteer_config["executablePath"] = browser
+            puppeteer_path = output_path.with_suffix(".puppeteer.json")
+            puppeteer_path.write_text(json.dumps(puppeteer_config), encoding="utf-8")
+
             cmd = [
                 "mmdc",
                 "-i", str(temp_mmd),
                 "-o", str(output_path),
                 "-c", str(config_path),
+                "-p", str(puppeteer_path),
                 "-b", "transparent",
                 "-w", str(inputs.get("width", 1200)),
             ]
 
             try:
-                self.run_command(cmd, timeout=30)
+                self.run_command(cmd, timeout=60)
             finally:
                 temp_mmd.unlink(missing_ok=True)
                 config_path.unlink(missing_ok=True)
+                puppeteer_path.unlink(missing_ok=True)
 
             return ToolResult(
                 success=True,
