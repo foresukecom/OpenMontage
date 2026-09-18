@@ -166,6 +166,16 @@ ENV HYPERFRAMES_BROWSER_PATH=/usr/local/bin/chrome-headless-shell
 # CLI フラグ(--browser-executable)ではなく環境変数で効かせる必要がある。
 ENV REMOTION_BROWSER_EXECUTABLE=/usr/local/bin/chrome-headless-shell
 
+# Mermaid CLI（diagram_gen が技術図解のレンダリングに使う）
+# 未導入だと diagram_gen は Mermaid のソースを生テキストとして描画する
+# text_card に無言でフォールバックし、日本語は豆腐になる。
+# mmdc は puppeteer 経由で Chrome を起動するため、上で入れた Chromium を使わせる
+# （puppeteer に自前のブラウザをダウンロードさせない）。
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/chromium
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+RUN npm install -g @mermaid-js/mermaid-cli \
+    && npm cache clean --force
+
 # VOICEVOX ENGINE（無料・オフラインの日本語TTS）
 # piper には日本語音声が存在しないため、APIキー無しで日本語ナレーションを作る
 # 唯一の手段がこれ。HTTPサーバ(127.0.0.1:50021)として動作し、
