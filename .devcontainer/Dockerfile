@@ -157,6 +157,15 @@ RUN mkdir -p /opt/playwright \
 # HyperFrames にこの Chromium を使わせる
 ENV HYPERFRAMES_BROWSER_PATH=/usr/local/bin/chrome-headless-shell
 
+# Remotion にも同じ Chromium を使わせる。
+# Remotion は自前の Chrome Headless Shell を初回レンダリング時に
+# ダウンロードするが、この環境ではそれが zygote の起動に失敗し
+# "Timed out after 25000 ms while trying to connect to the browser" で
+# レンダリングが止まる。上で入れた Playwright ビルドは正常に動くため
+# そちらを使わせる。video_compose は Remotion を内部で呼ぶので
+# CLI フラグ(--browser-executable)ではなく環境変数で効かせる必要がある。
+ENV REMOTION_BROWSER_EXECUTABLE=/usr/local/bin/chrome-headless-shell
+
 # VOICEVOX ENGINE（無料・オフラインの日本語TTS）
 # piper には日本語音声が存在しないため、APIキー無しで日本語ナレーションを作る
 # 唯一の手段がこれ。HTTPサーバ(127.0.0.1:50021)として動作し、
