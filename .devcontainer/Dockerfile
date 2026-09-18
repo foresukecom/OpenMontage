@@ -157,6 +157,38 @@ RUN mkdir -p /opt/playwright \
 # HyperFrames にこの Chromium を使わせる
 ENV HYPERFRAMES_BROWSER_PATH=/usr/local/bin/chrome-headless-shell
 
+# VOICEVOX ENGINE（無料・オフラインの日本語TTS）
+# piper には日本語音声が存在しないため、APIキー無しで日本語ナレーションを作る
+# 唯一の手段がこれ。HTTPサーバ(127.0.0.1:50021)として動作し、
+# tools/audio/voicevox_tts.py が初回利用時に自動起動する。
+#
+# 注意: 展開後 約2.1GB あり、イメージサイズがその分増える。
+# 不要なら --build-arg INSTALL_VOICEVOX=false でスキップできる。
+#
+# ライセンス: 商用・非商用問わず無料。ただし「VOICEVOX:<キャラクター名>」等の
+# クレジット表記が必須で、キャラクターごとに個別規約がある。
+# https://voicevox.hiroshiba.jp/term/
+ARG INSTALL_VOICEVOX=true
+ARG VOICEVOX_VERSION=0.25.2
+RUN if [ "$INSTALL_VOICEVOX" = "true" ]; then \
+        set -eux; \
+        apt-get update && apt-get install -y --no-install-recommends p7zip-full; \
+        case "$(dpkg --print-architecture)" in \
+            arm64) VV_ARCH=linux-cpu-arm64 ;; \
+            amd64) VV_ARCH=linux-cpu-x64 ;; \
+            *) echo "unsupported arch for VOICEVOX" && exit 1 ;; \
+        esac; \
+        mkdir -p /tmp/vv /opt/voicevox; \
+        curl -fsSL -o /tmp/vv/engine.7z.001 \
+            "https://github.com/VOICEVOX/voicevox_engine/releases/download/${VOICEVOX_VERSION}/voicevox_engine-${VV_ARCH}-${VOICEVOX_VERSION}.7z.001"; \
+        7z x -y -o/opt/voicevox /tmp/vv/engine.7z.001; \
+        mv "/opt/voicevox/${VV_ARCH}" /opt/voicevox/engine; \
+        rm -rf /tmp/vv; \
+        chmod +x /opt/voicevox/engine/run; \
+        apt-get clean; \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # GitHub CLIのインストール（公式aptリポジトリ / amd64・arm64両対応）
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
