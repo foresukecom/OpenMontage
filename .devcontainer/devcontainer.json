@@ -1,0 +1,34 @@
+{
+  "name": "Base Development Container",
+  "dockerComposeFile": "compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "donjayamanne.githistory",
+        "eamodio.gitlens",
+        "github.vscode-pull-request-github",
+        "mhutchie.git-graph",
+        "ms-ceintl.vscode-language-pack-ja",
+        "seatonjiang.gitmoji-vscode",
+        "Google.gemini-cli-vscode-ide-companion"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "zsh": {
+            "path": "/bin/zsh"
+          }
+        }
+      }
+    }
+  },
+  "postCreateCommand": [
+    "bash",
+    "-c",
+    "if [ -f ~/.zshrc_host ]; then echo 'source ~/.zshrc_host' >> ~/.zshrc; fi"
+  ],
+  "remoteUser": "developer"
+}
