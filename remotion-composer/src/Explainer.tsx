@@ -26,6 +26,10 @@ import { HeroTitle } from "./components/HeroTitle";
 import { AnimeScene } from "./components/AnimeScene";
 import type { CameraMotion } from "./components/AnimeScene";
 import { TerminalScene } from "./components/TerminalScene";
+import { HashDistribution } from "./components/HashDistribution";
+import type { HashKey } from "./components/HashDistribution";
+import { ScanVsQuery } from "./components/ScanVsQuery";
+import { ChecklistReveal } from "./components/ChecklistReveal";
 import type { TerminalStep } from "./components/TerminalScene";
 import { ScreenshotScene } from "./components/ScreenshotScene";
 import type { ScreenshotStep } from "./components/ScreenshotScene";
@@ -268,6 +272,22 @@ interface Cut {
   screenshotSteps?: ScreenshotStep[];
   screenshotSize?: { width: number; height: number };
   cursorStartAt?: [number, number];
+  // Hash distribution props (type: "hash_distribution")
+  hashKeys?: HashKey[];
+  partitionCount?: number;
+  hashLabel?: string;
+  partitionLabelPrefix?: string;
+  // Scan vs Query props (type: "scan_vs_query")
+  gridRows?: number;
+  gridCols?: number;
+  fillSeconds?: number;
+  // Checklist reveal props (type: "checklist_reveal")
+  checklistItems?: string[];
+  // Comparison side colours — without these the card paints both sides from
+  // the theme, which can put a "positive" colour on the side the script is
+  // warning about.
+  leftColor?: string;
+  rightColor?: string;
 }
 
 interface Overlay {
@@ -308,6 +328,15 @@ export interface ExplainerProps {
   overlays?: Overlay[];
   captions?: WordCaption[];
   audio?: AudioConfig;
+  /**
+   * Separator drawn between caption words. Defaults to a space, which is
+   * right for space-delimited languages. CJK callers pass "" — Japanese,
+   * Chinese and Korean do not put spaces between words, and the inserted
+   * space also lets lines wrap mid-word.
+   */
+  captionWordSeparator?: string;
+  captionFontSize?: number;
+  captionWordsPerPage?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -617,6 +646,8 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
         leftValue={cut.leftValue} rightValue={cut.rightValue}
         title={cut.title} backgroundColor={bgColor} textColor={textColor}
         cardBackgroundColor={cut.cardBackgroundColor || theme.surfaceColor}
+        leftColor={cut.leftColor}
+        rightColor={cut.rightColor}
       />
     );
   }
@@ -640,6 +671,48 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
         prompt={cut.prompt}
         accentColor={accent}
         backgroundColor={bgColor || theme.backgroundColor}
+      />
+    );
+  }
+  if (cut.type === "hash_distribution") {
+    return maybeWrapWithBg(
+      <HashDistribution
+        keys={cut.hashKeys as HashKey[] | undefined}
+        partitionCount={cut.partitionCount}
+        hashLabel={cut.hashLabel}
+        partitionLabelPrefix={cut.partitionLabelPrefix}
+        backgroundColor={bgColor || theme.backgroundColor}
+        color={textColor}
+        accentColor={accent}
+        mutedColor={theme.mutedTextColor}
+      />
+    );
+  }
+  if (cut.type === "scan_vs_query") {
+    return maybeWrapWithBg(
+      <ScanVsQuery
+        rows={cut.gridRows}
+        cols={cut.gridCols}
+        leftLabel={cut.leftLabel}
+        rightLabel={cut.rightLabel}
+        leftCaption={cut.leftValue}
+        rightCaption={cut.rightValue}
+        fillSeconds={cut.fillSeconds}
+        backgroundColor={bgColor || theme.backgroundColor}
+        color={textColor}
+        accentColor={accent}
+      />
+    );
+  }
+  if (cut.type === "checklist_reveal") {
+    return maybeWrapWithBg(
+      <ChecklistReveal
+        heading={cut.title}
+        items={cut.checklistItems as string[] | undefined}
+        backgroundColor={bgColor || theme.backgroundColor}
+        color={textColor}
+        accentColor={accent}
+        mutedColor={theme.mutedTextColor}
       />
     );
   }
@@ -835,7 +908,15 @@ const OverlayRenderer: React.FC<{ overlay: Overlay; theme: ThemeConfig }> = ({
 // ---------------------------------------------------------------------------
 
 export const Explainer: React.FC<ExplainerProps> = (props) => {
-  const { cuts, overlays, captions, audio } = props;
+  const {
+    cuts,
+    overlays,
+    captions,
+    audio,
+    captionWordSeparator,
+    captionFontSize,
+    captionWordsPerPage,
+  } = props;
   const { fps, durationInFrames } = useVideoConfig();
 
   // Resolve theme from props — playbook name, theme name, or custom themeConfig
@@ -876,8 +957,11 @@ export const Explainer: React.FC<ExplainerProps> = (props) => {
       {captions && captions.length > 0 && (
         <CaptionOverlay
           words={captions}
-          wordsPerPage={6}
-          fontSize={42}
+          wordsPerPage={captionWordsPerPage ?? 6}
+          fontSize={captionFontSize ?? 42}
+          {...(captionWordSeparator !== undefined
+            ? { wordSeparator: captionWordSeparator }
+            : {})}
           color={theme.textColor}
           highlightColor={theme.captionHighlightColor}
           backgroundColor={theme.captionBackgroundColor}
