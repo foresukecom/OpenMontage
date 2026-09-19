@@ -89,7 +89,7 @@ class VoicevoxTTS(BaseTool):
         "such as 'VOICEVOX:<character>' is REQUIRED, and each voice library\n"
         "carries its own terms -- see https://voicevox.hiroshiba.jp/term/"
     )
-    agent_skills = ["text-to-speech"]
+    agent_skills = ["voicevox", "text-to-speech"]
 
     capabilities = [
         "text_to_speech",
