@@ -104,3 +104,10 @@ venv/
 
 # Local Wan / diffusers GPU environment
 .venv-wan/
+
+# Third-party character art (e.g. Zundamon PSDs). Usable in videos under the
+# author's terms, but not ours to redistribute — download locally, see the
+# README.md in each character folder.
+assets/characters/**/*
+!assets/characters/**/
+!assets/characters/**/README.md
