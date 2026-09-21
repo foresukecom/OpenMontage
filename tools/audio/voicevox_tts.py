@@ -104,6 +104,7 @@ class VoicevoxTTS(BaseTool):
         "native_audio": True,
         "japanese": True,
         "word_timestamps": False,
+        "phoneme_timestamps": True,
     }
     best_for = [
         "Japanese narration without an API key or per-character cost",
@@ -169,6 +170,14 @@ class VoicevoxTTS(BaseTool):
                 "description": "Silence after speech, in seconds.",
             },
             "output_path": {"type": "string"},
+            "timeline_output_path": {
+                "type": "string",
+                "description": (
+                    "Optional. Writes a phoneme-level timeline JSON (start/end seconds per "
+                    "consonant, vowel and pause) derived from the same query that rendered "
+                    "the WAV — frame-exact input for lip sync."
+                ),
+            },
         },
     }
 
@@ -362,6 +371,51 @@ class VoicevoxTTS(BaseTool):
             },
         )
 
+    # The engine renders at 24 kHz with a 256-sample hop, and rounds every
+    # phoneme to whole frames *after* applying speedScale. Summing the raw
+    # lengths instead drifts ~20 ms per sentence, which is visible in lip sync.
+    _FRAME_RATE = 24000 / 256
+    # /synthesis appends a rising vowel of this length to interrogative phrases
+    # (enable_interrogative_upspeak defaults to true); it is not in the query.
+    _UPSPEAK_SECONDS = 0.15
+
+    @classmethod
+    def _phoneme_timeline(cls, query: dict[str, Any]) -> list[dict[str, Any]]:
+        """Rebuild per-phoneme start/end times exactly as the engine renders them."""
+        speed = query.get("speedScale") or 1.0
+        frames = 0
+        phonemes: list[dict[str, Any]] = []
+
+        def add(phoneme: str, length: float, mora: str) -> None:
+            nonlocal frames
+            n = round(length / speed * cls._FRAME_RATE)
+            if n <= 0:
+                return
+            phonemes.append(
+                {
+                    "phoneme": phoneme,
+                    "mora": mora,
+                    "start": round(frames / cls._FRAME_RATE, 4),
+                    "end": round((frames + n) / cls._FRAME_RATE, 4),
+                }
+            )
+            frames += n
+
+        add("pau", query.get("prePhonemeLength", 0.1), "")
+        for phrase in query.get("accent_phrases", []):
+            moras = phrase.get("moras", [])
+            for mora in moras:
+                if mora.get("consonant") and mora.get("consonant_length"):
+                    add(mora["consonant"], mora["consonant_length"], mora["text"])
+                add(mora["vowel"], mora["vowel_length"], mora["text"])
+            # The engine skips upspeak only when the last mora is unvoiced.
+            if phrase.get("is_interrogative") and moras and moras[-1].get("pitch", 0) > 0:
+                add(moras[-1]["vowel"], cls._UPSPEAK_SECONDS, "")
+            if phrase.get("pause_mora"):
+                add("pau", phrase["pause_mora"]["vowel_length"], "、")
+        add("pau", query.get("postPhonemeLength", 0.1), "")
+        return phonemes
+
     def _synthesize(self, inputs: dict[str, Any]) -> ToolResult:
         text = inputs.get("text")
         if not text:
@@ -398,13 +452,38 @@ class VoicevoxTTS(BaseTool):
         output_path.write_bytes(audio)
 
         with wave.open(str(output_path), "rb") as handle:
-            audio_seconds = round(handle.getnframes() / float(handle.getframerate()), 2)
+            exact_seconds = handle.getnframes() / float(handle.getframerate())
             sample_rate = handle.getframerate()
+        audio_seconds = round(exact_seconds, 2)
+
+        timeline_data: dict[str, Any] = {}
+        if inputs.get("timeline_output_path"):
+            phonemes = self._phoneme_timeline(query)
+            drift = round(exact_seconds - phonemes[-1]["end"], 4) + 0.0  # no -0.0
+            timeline_path = Path(inputs["timeline_output_path"])
+            timeline_path.parent.mkdir(parents=True, exist_ok=True)
+            timeline_path.write_text(
+                json.dumps(
+                    {
+                        "audio": str(output_path),
+                        "text": text,
+                        "speaker": speaker,
+                        "audio_seconds": round(exact_seconds, 4),
+                        "drift_seconds": drift,
+                        "phonemes": phonemes,
+                    },
+                    ensure_ascii=False,
+                    indent=1,
+                ),
+                encoding="utf-8",
+            )
+            timeline_data = {"timeline": str(timeline_path), "timeline_drift_seconds": drift}
 
         return ToolResult(
             success=True,
             model=f"voicevox-speaker-{speaker}",
             data={
+                **timeline_data,
                 "provider": self.provider,
                 "speaker": speaker,
                 "text_length": len(text),
