@@ -144,6 +144,32 @@ after batch generation.
   explainers, but it does cost some authority — worth raising with the user when
   the piece is training material.
 
+## Lip sync: the phoneme timeline
+
+Pass `timeline_output_path` and the tool also writes a JSON timeline built
+from the same query that rendered the WAV:
+
+```json
+{"audio_seconds": 2.3147, "drift_seconds": 0.0,
+ "phonemes": [{"phoneme": "pau", "mora": "", "start": 0.0, "end": 0.096},
+              {"phoneme": "e", "mora": "エ", "start": 0.096, "end": 0.2667}, ...]}
+```
+
+Drive mouth shapes from the vowels (`a i u e o`), close the mouth on `pau`,
+`cl`, `N` and the bilabials `m b p`. Do not rebuild timing from the query
+yourself — two things make the naive sum wrong:
+
+- **Frame rounding.** The engine rounds every phoneme to 24000/256 Hz frames
+  *after* `speedScale`. Summing raw lengths drifts ~20 ms per sentence and
+  compounds across a scene.
+- **Interrogative upspeak.** `/synthesis` appends a 0.15 s rising vowel to a
+  `？` phrase unless its last mora is unvoiced. It is not in the query, so every
+  mouth after a question lands ~4 frames late without it.
+
+`drift_seconds` is WAV length minus timeline end. It should be `0.0`; anything
+larger than one video frame means the engine's rendering rules changed —
+re-check before trusting the lip sync.
+
 ## Cost
 
 Free. `estimate_cost()` returns `0.0` for every input. There is no quota and no
